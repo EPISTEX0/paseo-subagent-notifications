@@ -5,8 +5,28 @@ All notable changes to this plugin are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Paseo distributes plugins by pinning a commit, so each version below is also an annotated git
-tag (`v0.1.0` … `v0.2.0`): `git show v0.2.0` resolves the commit to pin. Numbers quoted here were
-measured against a running Paseo 0.8.0 daemon; anything not measured says so.
+tag (`v0.1.0` … `v0.3.0`): `git show v0.3.0` resolves the commit to pin. Numbers quoted here were
+measured against a running Paseo daemon (0.8.0 up to 0.2.0, 0.10.2 for 0.3.0); anything not
+measured says so.
+
+## [0.3.0] - 2026-10-01
+
+Every parent is covered without setup, under a name that matches Paseo's own vocabulary.
+
+### Changed
+
+- **Renamed `parent-wake` → `subagent-notifications`**: the plugin id, the opt-out label, the log
+  prefix and the repository (`paseo-subagent-notifications`). Paseo calls a spawned agent a
+  subagent and its built-in callback a finish notification; this plugin extends that callback, so
+  it now carries that name. Reinstall under the new id and remove the old one.
+- **On by default.** The `subagent-notifications` label is now an opt-out: only `off`, `false`,
+  `0` or an empty value on the parent or the child silences the wake. Before, a parent without the label
+  heard only Paseo's own first notification and missed the rest.
+
+  Measured on Paseo 0.10.2 with a parent → child → background subagent (`sleep 45`) chain, no
+  labels anywhere: with 0.2.0 the parent heard 1 wake (`CHILD-WAITING`, from Paseo's
+  `notifyOnFinish`); with 0.3.0 and `notifyOnFinish: false` it heard 3 (`CHILD-WAITING`, the
+  intermediate turn, `CHILD-FINAL`).
 
 ## [0.2.0] - 2026-09-18
 

@@ -1,16 +1,16 @@
 /** Pure helpers, kept free of the Paseo SDK so they can run under `node --test`. */
 
-export const WAKE_LABEL = "parent-wake";
+export const LABEL = "subagent-notifications";
 export const RESPONSE_LIMIT = 4000;
 
 type Labels = Readonly<Record<string, string>> | undefined;
 type TimelineItem = { type: string; text?: string };
 
-/** Opt-in: the parent or the child carries `parent-wake` with a value other than off/false/0. */
-export function wantsWake(parentLabels: Labels, childLabels: Labels): boolean {
-  const on = (value: string | undefined) =>
-    value !== undefined && !["", "off", "false", "0"].includes(value.trim().toLowerCase());
-  return on(parentLabels?.[WAKE_LABEL]) || on(childLabels?.[WAKE_LABEL]);
+/** On by default: the label set to off/false/0 (or empty) on the parent or the child opts out. */
+export function wantsNotification(parentLabels: Labels, childLabels: Labels): boolean {
+  const off = (value: string | undefined) =>
+    value !== undefined && ["", "off", "false", "0"].includes(value.trim().toLowerCase());
+  return !off(parentLabels?.[LABEL]) && !off(childLabels?.[LABEL]);
 }
 
 /** Claude streams one assistant_message item per chunk: join the last contiguous run. */

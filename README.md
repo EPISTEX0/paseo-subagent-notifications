@@ -1,4 +1,4 @@
-# parent-wake
+# subagent-notifications
 
 Wakes an orchestrating parent agent in [Paseo](https://paseo.sh) on **every** question and **every** finished turn of its child agents, not only the first one.
 
@@ -11,7 +11,7 @@ This plugin listens to the daemon's lifecycle hooks and keeps waking the parent 
 ## Install
 
 ```bash
-paseo plugin add EPISTEX0/paseo-parent-wake
+paseo plugin add EPISTEX0/paseo-subagent-notifications
 ```
 
 Plugins must be enabled on the daemon (**Settings → Plugins → Enable plugins**). Requires Paseo 0.8 or later. Server-only: no UI, no network, no filesystem access.
@@ -19,21 +19,23 @@ Plugins must be enabled on the daemon (**Settings → Plugins → Enable plugins
 From a local checkout:
 
 ```bash
-git clone https://github.com/EPISTEX0/paseo-parent-wake
-cd paseo-parent-wake && npm install && npm run typecheck && npm test
+git clone https://github.com/EPISTEX0/paseo-subagent-notifications
+cd paseo-subagent-notifications && npm install && npm run typecheck && npm test
 paseo plugin install "$PWD"
 ```
 
 ## Setup
 
-The plugin does nothing until an agent opts in with the label `parent-wake` (any value except `off`, `false`, `0`), on either side:
+None. Once installed, every parent is woken for every child that carries `paseo.parent-agent-id`.
 
-- **On the parent**, to cover every child it spawns:
-  `update_agent(agentId: <own id>, labels: {"parent-wake": "always"})`. An agent's own id is in `PASEO_AGENT_ID`.
+To opt out, set the label `subagent-notifications` to `off`, `false` or `0` on either side:
+
+- **On the parent**, to silence every child it spawns:
+  `update_agent(agentId: <own id>, labels: {"subagent-notifications": "off"})`. An agent's own id is in `PASEO_AGENT_ID`.
 - **On a child**, at spawn time:
-  `create_agent(..., labels: {"parent-wake": "always"}, notifyOnFinish: false)`.
+  `create_agent(..., labels: {"subagent-notifications": "off"})`.
 
-Pass `notifyOnFinish: false` on `create_agent` and `send_agent_prompt` once the plugin is active, otherwise the first notification arrives twice (once from Paseo, once from the plugin). Parents without the label keep Paseo's built-in behavior unchanged.
+Pass `notifyOnFinish: false` on `create_agent` and `send_agent_prompt` once the plugin is active, otherwise the first notification arrives twice (once from Paseo, once from the plugin). Opted-out parents keep Paseo's built-in behavior unchanged.
 
 ## How it works
 
@@ -73,7 +75,7 @@ running one. This is the procedure that produced the numbers below.
 `paseo plugin install <dir>` refuses an id that is already configured:
 
 ```
-Plugin ID "parent-wake" is already configured; choose another ID with --id
+Plugin ID "subagent-notifications" is already configured; choose another ID with --id
 ```
 
 `paseo plugin update` is not the way round it either. `sources.json` records a `remote` and a
@@ -83,11 +85,11 @@ any unpushed commit sitting in it.
 What works is to copy the runtime files straight into `checkoutRoot` and reload:
 
 ```bash
-CHECKOUT=$(node -e 'const fs=require("fs"),os=require("os");console.log(JSON.parse(fs.readFileSync(os.homedir()+"/.paseo/plugins/sources.json","utf8"))["parent-wake"].checkoutRoot)')
+CHECKOUT=$(node -e 'const fs=require("fs"),os=require("os");console.log(JSON.parse(fs.readFileSync(os.homedir()+"/.paseo/plugins/sources.json","utf8"))["subagent-notifications"].checkoutRoot)')
 cp index.server.ts "$CHECKOUT/"
 cp server/lib.ts "$CHECKOUT/server/"
 sha256sum index.server.ts server/lib.ts "$CHECKOUT/index.server.ts" "$CHECKOUT/server/lib.ts"
-paseo plugin reload parent-wake
+paseo plugin reload subagent-notifications
 ```
 
 Compare the four hashes before trusting anything the run produces, and run `sha256sum` again after
@@ -115,7 +117,7 @@ together.
 Then, for each version under test: load it as above, confirm from `~/.paseo/daemon.log` that the
 plugin actually reloaded (see the two traps in `CLAUDE.md` — neither the `paseo plugin ls` commit
 column nor the checkout mtime tells you what is loaded), count, trigger three real wakes, count
-again. Each wake leaves a `[parent-wake] → …` line in `daemon.log` to prove it fired.
+again. Each wake leaves a `[subagent-notifications] → …` line in `daemon.log` to prove it fired.
 
 Result on Paseo 0.8.0, three wakes per branch:
 

@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lastAssistantText, permissionBody, responseBlock, turnBody, wantsWake } from "./lib.ts";
+import { lastAssistantText, permissionBody, responseBlock, turnBody, wantsNotification } from "./lib.ts";
 
-test("wantsWake: opt-in on parent or child, off values ignored", () => {
-  assert.equal(wantsWake(undefined, undefined), false);
-  assert.equal(wantsWake({ "parent-wake": "always" }, undefined), true);
-  assert.equal(wantsWake(undefined, { "parent-wake": "always" }), true);
-  assert.equal(wantsWake({ "parent-wake": "off" }, { "parent-wake": "false" }), false);
+test("wantsNotification: on by default, an off value on parent or child opts out", () => {
+  assert.equal(wantsNotification(undefined, undefined), true);
+  assert.equal(wantsNotification({}, {}), true);
+  assert.equal(wantsNotification({ "subagent-notifications": "on" }, undefined), true);
+  assert.equal(wantsNotification({ "subagent-notifications": "off" }, undefined), false);
+  assert.equal(wantsNotification(undefined, { "subagent-notifications": "0" }), false);
+  assert.equal(wantsNotification({ "subagent-notifications": "on" }, { "subagent-notifications": "false" }), false);
 });
 
 test("lastAssistantText joins streamed chunks after the last non-assistant item", () => {
@@ -42,7 +44,7 @@ test('a wake is sent with messageId "" so it takes no jump list slot', async () 
 
   const sent: Array<{ text: string; options: { messageId?: string; activeTurnBehavior?: string } }> = [];
   const parentRef = {
-    refresh: async () => ({ agent: { labels: { "parent-wake": "always" }, pendingPermissions: [], archivedAt: null } }),
+    refresh: async () => ({ agent: { labels: {}, pendingPermissions: [], archivedAt: null } }),
     current: () => null,
     send: async (text: string, options: { messageId?: string; activeTurnBehavior?: string }) => {
       sent.push({ text, options });

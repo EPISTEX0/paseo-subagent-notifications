@@ -1,5 +1,5 @@
 {
-  "id": "parent-wake",
+  "id": "subagent-notifications",
   "requirements": {
     "paseo": ">=0.8.0"
   }

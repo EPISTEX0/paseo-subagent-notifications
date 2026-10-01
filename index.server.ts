@@ -1,5 +1,5 @@
 import type { PluginHookAgent, PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { lastAssistantText, permissionBody, systemMessage, turnBody, wantsWake } from "./server/lib.ts";
+import { lastAssistantText, permissionBody, systemMessage, turnBody, wantsNotification } from "./server/lib.ts";
 
 type Paseo = PluginHookContext["paseo"];
 
@@ -17,7 +17,7 @@ export default function contribute(server: PluginServerContext) {
     // Rewriting that ?? as || would silently undo this fix, and nothing here would fail.
     const options = { activeTurnBehavior: "steer", messageId: "" } as Parameters<typeof parent.send>[1];
     await parent.send(systemMessage(body), options);
-    console.log(`[parent-wake] → ${parentId}: ${body.split("\n")[0]}`);
+    console.log(`[subagent-notifications] → ${parentId}: ${body.split("\n")[0]}`);
   }
 
   async function wake(paseo: Paseo, child: PluginHookAgent, makeBody: (title: string) => string) {
@@ -27,11 +27,11 @@ export default function contribute(server: PluginServerContext) {
     const snapshot = (await parent.refresh())?.agent ?? parent.current();
     if (!snapshot || snapshot.archivedAt) return;
     const childSnapshot = (await paseo.agents.ref(child.id).refresh())?.agent;
-    if (!wantsWake(snapshot.labels, childSnapshot?.labels)) return;
+    if (!wantsNotification(snapshot.labels, childSnapshot?.labels)) return;
     const body = makeBody(childSnapshot?.title ?? child.title ?? child.id);
     if (snapshot.pendingPermissions.length > 0) {
       held.set(parentId, [...(held.get(parentId) ?? []), body]);
-      console.log(`[parent-wake] held for ${parentId} (parent has a pending permission): ${body.split("\n")[0]}`);
+      console.log(`[subagent-notifications] held for ${parentId} (parent has a pending permission): ${body.split("\n")[0]}`);
       return;
     }
     await deliver(paseo, parentId, body);
