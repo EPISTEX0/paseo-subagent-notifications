@@ -1,6 +1,6 @@
 {
   "name": "paseo-subagent-notifications",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Wake an orchestrating parent agent on every question and every finished turn of its child agents, not only the first one.",
   "private": true,
   "type": "module",
