@@ -73,3 +73,91 @@ test('a wake is sent with messageId "" so it takes no jump list slot', async () 
   assert.equal(sent[0].options.activeTurnBehavior, "steer");
   assert.match(sent[0].text, /^<paseo-system>\n/);
 });
+
+// A finished-turn wake must not steer a running parent: on Claude that aborts the tool in flight
+// and is reported to the parent as a user rejection. It is held and sent when the parent's turn ends.
+test("a finished turn is held while the parent runs and sent when its turn ends", async () => {
+  const { default: contribute } = await import("../index.server.ts");
+
+  let status = "running";
+  const sent: string[] = [];
+  const parentRef = {
+    refresh: async () => ({ agent: { labels: {}, pendingPermissions: [], archivedAt: null, status } }),
+    current: () => null,
+    send: async (text: string) => {
+      sent.push(text);
+    },
+  };
+  const childRef = { refresh: async () => ({ agent: { labels: {}, title: "Child · x", status: "idle" } }) };
+  const paseo = { agents: { ref: (id: string) => (id === "parent-1" ? parentRef : childRef) } };
+  const handlers = new Map<string, (event: unknown, context: unknown) => Promise<void>>();
+  const server = {
+    on: (name: string, handler: (event: unknown, context: unknown) => Promise<void>) => {
+      handlers.set(name, handler);
+      return () => handlers.delete(name);
+    },
+  };
+  const stop = contribute(server as never);
+  const childEnded = (id: string) =>
+    handlers.get("agent.turn_ended")!(
+      { agent: { id, parentAgentId: "parent-1", title: id }, outcome: { kind: "completed" }, timeline: [] },
+      { paseo },
+    );
+
+  await childEnded("child-1");
+  await childEnded("child-2");
+  assert.equal(sent.length, 0);
+
+  await handlers.get("agent.permission_requested")!(
+    { agent: { id: "child-3", parentAgentId: "parent-1", title: "c3" }, request: { id: "r1", name: "Bash" } },
+    { paseo },
+  );
+  assert.equal(sent.length, 1, "a child's question still reaches a running parent");
+
+  status = "idle";
+  await handlers.get("agent.turn_ended")!(
+    { agent: { id: "parent-1", parentAgentId: null, title: "p" }, outcome: { kind: "completed" }, timeline: [] },
+    { paseo },
+  );
+  stop();
+
+  assert.equal(sent.length, 2, "both held results arrive in one message");
+  assert.match(sent[1], /child-1/);
+  assert.match(sent[1], /child-2/);
+});
+
+// A Claude Code parent that replied and waits on background tasks stays `running` with no
+// turn_ended; the held wake must still arrive after MAX_HOLD_MS.
+test("a held finished turn is delivered after MAX_HOLD_MS even if the parent never goes idle", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { default: contribute, MAX_HOLD_MS } = await import("../index.server.ts");
+  const sent: string[] = [];
+  const parentRef = {
+    refresh: async () => ({ agent: { labels: {}, pendingPermissions: [], archivedAt: null, status: "running" } }),
+    current: () => null,
+    send: async (text: string) => {
+      sent.push(text);
+    },
+  };
+  const childRef = { refresh: async () => ({ agent: { labels: {}, title: "Child", status: "idle" } }) };
+  const paseo = { agents: { ref: (id: string) => (id === "parent-1" ? parentRef : childRef) } };
+  let ended: (event: unknown, context: unknown) => Promise<void> = async () => {};
+  const stop = contribute({
+    on: (name: string, handler: typeof ended) => {
+      if (name === "agent.turn_ended") ended = handler;
+      return () => {};
+    },
+  } as never);
+  await ended(
+    { agent: { id: "child-1", parentAgentId: "parent-1", title: "c" }, outcome: { kind: "completed" }, timeline: [] },
+    { paseo },
+  );
+  assert.equal(sent.length, 0);
+  t.mock.timers.tick(MAX_HOLD_MS - 1);
+  assert.equal(sent.length, 0);
+  t.mock.timers.tick(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /child-1/);
+  stop();
+});

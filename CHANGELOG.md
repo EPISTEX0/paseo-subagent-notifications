@@ -9,6 +9,32 @@ tag (`v0.1.0` … `v0.3.0`): `git show v0.3.0` resolves the commit to pin. Numbe
 measured against a running Paseo daemon (0.8.0 up to 0.2.0, 0.10.2 for 0.3.0); anything not
 measured says so.
 
+## [Unreleased]
+
+### Fixed
+
+- **A held finished-turn wake is delivered after at most 2 minutes.** A Claude Code parent that
+  replied and waits on its own background subagent stays `running` with no `turn_ended`, so the
+  0.4.0 hold kept a wake for 45 minutes (daemon.log 07:40:43 held, 08:25:31 delivered). Not yet
+  measured against a live daemon.
+
+## [0.4.0] - 2026-10-07
+
+A finished child no longer aborts the parent's running tool.
+
+### Fixed
+
+- **Finished-turn wakes wait for the parent's turn to end.** On the Claude provider a steer is
+  queued with `priority: "next"` and aborts the tool in flight, which Claude Code reports to the
+  parent as a user rejection ("STOP what you are doing and wait for the user"); a parent hit this
+  stalled for 17 minutes waiting for a decision nobody had asked for. Turn results are now held
+  while the parent is `running` and sent as one message when its turn ends (or when its pending
+  permission resolves and it is no longer running). Child questions are still sent at once.
+
+  Measured on Paseo 0.10.3, parent running a foreground 45 s sleep while its child finished: 0.3.0
+  rejected the Bash call 6 ms after the wake; 0.4.0 held the wake, the call returned `SLEPT-DONE`,
+  and the wake arrived 1.7 s after it.
+
 ## [0.3.0] - 2026-10-01
 
 Every parent is covered without setup, under a name that matches Paseo's own vocabulary.
