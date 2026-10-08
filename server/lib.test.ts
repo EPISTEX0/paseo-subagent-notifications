@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { lastAssistantText, permissionBody, responseBlock, turnBody, wantsNotification } from "./lib.ts";
 
@@ -160,4 +160,93 @@ test("a held finished turn is delivered after MAX_HOLD_MS even if the parent nev
   assert.equal(sent.length, 1);
   assert.match(sent[0], /child-1/);
   stop();
+});
+
+async function rig(t: TestContext) {
+  t.mock.timers.reset();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { default: contribute, MAX_HOLD_MS } = await import("../index.server.ts");
+  const parent = { status: "running", pending: 0, archived: null as string | null, throws: false };
+  const sent: string[] = [];
+  const parentRef = {
+    refresh: async () => {
+      if (parent.throws) throw new Error("gone");
+      return { agent: { labels: {}, pendingPermissions: Array(parent.pending).fill({}), archivedAt: parent.archived, status: parent.status } };
+    },
+    current: () => null,
+    send: async (text: string) => void sent.push(text),
+  };
+  const childRef = { refresh: async () => ({ agent: { labels: {}, title: "Child", status: "idle" } }) };
+  const paseo = { agents: { ref: (id: string) => (id === "parent-1" ? parentRef : childRef) } };
+  const handlers = new Map<string, (event: unknown, context: unknown) => Promise<void>>();
+  const stop = contribute({
+    on: (name: string, handler: (event: unknown, context: unknown) => Promise<void>) => (handlers.set(name, handler), () => {}),
+  } as never);
+  const ctx = { paseo };
+  const child = (id: string) => ({ id, parentAgentId: "parent-1", title: id });
+  return {
+    parent, sent, stop, MAX_HOLD_MS,
+    childEnded: (id: string) => handlers.get("agent.turn_ended")!({ agent: child(id), outcome: { kind: "completed" }, timeline: [] }, ctx),
+    childAsks: (id: string) => handlers.get("agent.permission_requested")!({ agent: child(id), request: { id: `r-${id}`, name: "Bash" } }, ctx),
+    parentResolved: () => handlers.get("agent.permission_resolved")!({ agent: { id: "parent-1" }, requestId: "p" }, ctx),
+    tick: async (ms: number) => { t.mock.timers.tick(ms); await new Promise((r) => setImmediate(r)); },
+  };
+}
+
+test("after the parent's permission is resolved, a held child question is sent even though the parent runs", async (t) => {
+  const r = await rig(t);
+  r.parent.pending = 1;
+  await r.childEnded("child-1");
+  await r.childAsks("child-2");
+  assert.equal(r.sent.length, 0);
+  r.parent.pending = 0; // approved: the parent resumes as running
+  await r.parentResolved();
+  assert.equal(r.sent.length, 1);
+  assert.match(r.sent[0], /child-2/);
+  assert.doesNotMatch(r.sent[0], /child-1/, "the finished turn still waits for turn end or timer");
+  await r.tick(r.MAX_HOLD_MS);
+  assert.equal(r.sent.length, 2);
+  assert.match(r.sent[1], /child-1/);
+  r.stop();
+});
+
+test("a hold made for a pending permission is bounded by the timer once the permission is gone", async (t) => {
+  const r = await rig(t);
+  r.parent.pending = 1;
+  await r.childEnded("child-1");
+  await r.tick(r.MAX_HOLD_MS * 3);
+  assert.equal(r.sent.length, 0, "still pending: keep holding");
+  r.parent.pending = 0;
+  await r.tick(r.MAX_HOLD_MS);
+  assert.equal(r.sent.length, 1);
+  r.stop();
+});
+
+test("an archived or vanished parent is never sent a held wake", async (t) => {
+  const a = await rig(t);
+  await a.childEnded("child-1");
+  a.parent.archived = "2026-10-08";
+  await a.tick(a.MAX_HOLD_MS);
+  assert.equal(a.sent.length, 0);
+  a.parent.archived = null;
+  await a.tick(a.MAX_HOLD_MS * 2);
+  assert.equal(a.sent.length, 0, "dropped, not kept");
+  a.stop();
+  const b = await rig(t);
+  await b.childEnded("child-1");
+  b.parent.throws = true;
+  await b.tick(b.MAX_HOLD_MS);
+  b.parent.throws = false;
+  await b.tick(b.MAX_HOLD_MS * 2);
+  assert.equal(b.sent.length, 0);
+  b.stop();
+});
+
+test("cleanup sends held wakes instead of losing them, and arms no timer afterwards", async (t) => {
+  const r = await rig(t);
+  await r.childEnded("child-1");
+  r.stop();
+  await r.tick(0);
+  assert.equal(r.sent.length, 1);
+  assert.match(r.sent[0], /child-1/);
 });

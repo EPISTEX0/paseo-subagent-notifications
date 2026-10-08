@@ -15,8 +15,12 @@ measured says so.
 
 - **A held finished-turn wake is delivered after at most 2 minutes.** A Claude Code parent that
   replied and waits on its own background subagent stays `running` with no `turn_ended`, so the
-  0.4.0 hold kept a wake for 45 minutes (daemon.log 07:40:43 held, 08:25:31 delivered). Not yet
-  measured against a live daemon.
+  0.4.0 hold kept a wake for 45 minutes (daemon.log 07:40:43 held, 08:25:31 delivered). Measured on
+  2026-10-08, parent with a background Claude subagent making many tool calls: held 08:42:11.569,
+  delivered 08:44:11.616 by the timer. Every hold is now bounded (also those made for a pending
+  permission); a child's question is sent as soon as the parent's permission is resolved; the
+  held list is dropped for an archived or vanished parent (a send would unarchive it) and sent
+  best-effort when the plugin is reloaded.
 
 ## [0.4.0] - 2026-10-07
 
