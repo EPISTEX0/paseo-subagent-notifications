@@ -166,11 +166,12 @@ async function rig(t: TestContext) {
   t.mock.timers.reset();
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { default: contribute, MAX_HOLD_MS } = await import("../index.server.ts");
-  const parent = { status: "running", pending: 0, archived: null as string | null, throws: false };
+  const parent = { status: "running", pending: 0, archived: null as string | null, throws: false, missing: false };
   const sent: string[] = [];
   const parentRef = {
     refresh: async () => {
       if (parent.throws) throw new Error("gone");
+      if (parent.missing) return null;
       return { agent: { labels: {}, pendingPermissions: Array(parent.pending).fill({}), archivedAt: parent.archived, status: parent.status } };
     },
     current: () => null,
@@ -222,7 +223,7 @@ test("a hold made for a pending permission is bounded by the timer once the perm
   r.stop();
 });
 
-test("an archived or vanished parent is never sent a held wake", async (t) => {
+test("an archived or missing parent is never sent a held wake", async (t) => {
   const a = await rig(t);
   await a.childEnded("child-1");
   a.parent.archived = "2026-10-08";
@@ -234,9 +235,9 @@ test("an archived or vanished parent is never sent a held wake", async (t) => {
   a.stop();
   const b = await rig(t);
   await b.childEnded("child-1");
-  b.parent.throws = true;
+  b.parent.missing = true;
   await b.tick(b.MAX_HOLD_MS);
-  b.parent.throws = false;
+  b.parent.missing = false;
   await b.tick(b.MAX_HOLD_MS * 2);
   assert.equal(b.sent.length, 0);
   b.stop();
@@ -249,4 +250,18 @@ test("cleanup sends held wakes instead of losing them, and arms no timer afterwa
   await r.tick(0);
   assert.equal(r.sent.length, 1);
   assert.match(r.sent[0], /child-1/);
+});
+
+test("a transient refresh error keeps the held wake and the timer retries it once", async (t) => {
+  const r = await rig(t);
+  await r.childEnded("child-1");
+  r.parent.throws = true;
+  await r.tick(r.MAX_HOLD_MS);
+  assert.equal(r.sent.length, 0);
+  r.parent.throws = false;
+  await r.tick(r.MAX_HOLD_MS);
+  assert.equal(r.sent.length, 1);
+  await r.tick(r.MAX_HOLD_MS * 3);
+  assert.equal(r.sent.length, 1, "delivered once");
+  r.stop();
 });

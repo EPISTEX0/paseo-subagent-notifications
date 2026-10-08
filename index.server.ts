@@ -86,7 +86,7 @@ export default function contribute(server: PluginServerContext) {
 
   // One message, not one per body: the first delivery starts a turn and the rest would steer it.
   // `only` limits it to a kind (a child's question). A fresh snapshot gates it: an archived or
-  // vanished parent drops the list (send would unarchive it), a pending permission keeps it.
+  // missing parent (null snapshot) drops the list (send would unarchive it), a pending permission keeps it.
   async function flush(paseo: Paseo, parentId: string, only?: Held["kind"]) {
     const items = held.get(parentId);
     if (!items?.length) return;
@@ -98,8 +98,10 @@ export default function contribute(server: PluginServerContext) {
     let snapshot;
     try {
       snapshot = (await paseo.agents.ref(parentId).refresh())?.agent;
-    } catch {
-      return drop();
+    } catch (error) {
+      // Transient RPC failure: keep the list and retry. A missing agent is a null result, not a throw.
+      console.log(`[subagent-notifications] refresh failed for ${parentId}, retrying: ${error}`);
+      return arm(paseo, parentId);
     }
     if (!snapshot || snapshot.archivedAt) return drop();
     if (snapshot.pendingPermissions.length > 0) return arm(paseo, parentId);
